@@ -1,4 +1,5 @@
 
+
 import json
 import os
 import re
@@ -157,7 +158,7 @@ def main():
     sources = request_json(
         f"{SUPABASE_URL}/rest/v1/source_sites"
         "?select=name,website_url"
-        "&active=eq.true&name=eq.HDrama",
+        "&active=eq.true&name=eq.DramaExpress",
         token=token
     )
 
