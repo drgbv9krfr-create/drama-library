@@ -127,12 +127,43 @@ def inspect_drama(url):
         if episode_match else "Not detected"
     )
 
+    
     source = "Not detected"
-    source_match = re.search(
-        r'\bSource\s+([A-Za-z0-9+.-]+)',
-        page_text,
-        re.I
-    )
+
+    known_platforms = [
+        "Vigloo",
+        "GoodShort",
+        "FlickReels",
+        "StoreEl",
+        "ToonShort",
+        "KalosTV",
+        "ReelShort",
+        "DramaBox",
+        "ShortMax",
+        "NetShort",
+        "DramaWave",
+        "FlexTV",
+        "ReadShort",
+        "SnackShort",
+        "StoryReel",
+        "MoboReels",
+        "JoyReels",
+        "Sereal+",
+        "PineDrama",
+        "FreeReels",
+        "Melolo",
+        "RapidTV"
+    ]
+
+    for platform in known_platforms:
+        if re.search(
+            r"(?<![A-Za-z])" + re.escape(platform) + r"(?![A-Za-z])",
+            page_text,
+            re.I
+        ):
+            source = platform
+            break
+
     if source_match:
         source = source_match.group(1)
 
