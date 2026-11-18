@@ -1,0 +1,217 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#171827">
+<title>My Drama Library</title>
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 20px;
+  background: #171827; color: #f5f5fa;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+main { max-width: 720px; margin: auto; }
+h1 { font-size: 27px; margin-bottom: 5px; }
+.sub { color: #aaaabd; margin-bottom: 25px; }
+.panel {
+  background: #242538; border-radius: 14px;
+  padding: 18px; margin: 16px 0;
+}
+input, button {
+  width: 100%; padding: 13px; margin: 7px 0;
+  border-radius: 9px; border: 1px solid #494b64;
+  font-size: 16px;
+}
+input { background: #171827; color: white; }
+button {
+  background: #a78bfa; color: #171827;
+  font-weight: 700; border: 0; cursor: pointer;
+}
+button.secondary { background: #41435a; color: white; }
+.item {
+  border-bottom: 1px solid #41435a;
+  padding: 13px 0;
+}
+.item:last-child { border: 0; }
+.muted { color: #aaaabd; font-size: 13px; }
+.hidden { display: none; }
+#message { color: #c4b5fd; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🎬 My Drama Library</h1>
+  <div class="sub">Your personal short-drama finder</div>
+
+  <section id="login" class="panel">
+    <h2>Welcome back</h2>
+    <p class="muted">Sign in to access your private drama catalogue.</p>
+    <input id="email" type="email" placeholder="Your email">
+    <input id="password" type="password" placeholder="Your password">
+    <button id="loginButton">Sign in</button>
+    <div id="message"></div>
+  </section>
+
+  <section id="library" class="hidden">
+    <div class="panel">
+      <button id="logoutButton" class="secondary">Sign out</button>
+      <h2>Find a drama</h2>
+      <input id="search" placeholder="Search titles, plots or platforms...">
+      <div id="dramaList"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Add a drama</h2>
+      <input id="title" placeholder="Drama title">
+      <input id="platform" placeholder="Original platform">
+      <input id="synopsis" placeholder="Short synopsis">
+      <button id="addButton">Add to my library</button>
+    </div>
+
+    <div class="panel">
+      <h2>My sources</h2>
+      <div id="sourceList"></div>
+    </div>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const PROJECT_URL = "https://jqrfqkfnfsofiwjfcucq.supabase.co";
+const PUBLISHABLE_KEY = "sb_publishable_Rx62RG5uOZaQoDGv0i4iow_VmvvUdiH";
+
+const db = window.supabase.createClient(
+  PROJECT_URL,
+  PUBLISHABLE_KEY
+);
+
+const $ = id => document.getElementById(id);
+let dramas = [];
+
+function showMessage(message) {
+  $("message").textContent = message;
+}
+
+async function signIn() {
+  showMessage("Signing in...");
+  const { error } = await db.auth.signInWithPassword({
+    email: $("email").value.trim(),
+    password: $("password").value
+  });
+
+  if (error) showMessage(error.message);
+}
+
+async function signOut() {
+  await db.auth.signOut();
+}
+
+function displayDramas() {
+  const query = $("search").value.toLowerCase().trim();
+
+  const matches = dramas.filter(d =>
+    [d.primary_title, d.original_title, d.original_platform, d.synopsis]
+      .some(value => (value || "").toLowerCase().includes(query))
+  );
+
+  $("dramaList").innerHTML = matches.length
+    ? matches.map(d => `
+        <div class="item">
+          <strong>${escapeHTML(d.primary_title)}</strong>
+          <div class="muted">${escapeHTML(d.original_platform || "Platform unknown")}</div>
+          <p>${escapeHTML(d.synopsis || "No synopsis yet.")}</p>
+        </div>
+      `).join("")
+    : '<p class="muted">No matching dramas yet. Add one below!</p>';
+}
+
+function escapeHTML(value) {
+  return String(value).replace(/[&<>"']/g, char => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;",
+    '"': "&quot;", "'": "&#39;"
+  })[char]);
+}
+
+async function loadLibrary() {
+  $("login").classList.add("hidden");
+  $("library").classList.remove("hidden");
+
+  const { data, error } = await db
+    .from("dramas")
+    .select("primary_title, original_title, original_platform, synopsis")
+    .order("primary_title");
+
+  if (error) {
+    $("dramaList").textContent = "Could not load dramas: " + error.message;
+  } else {
+    dramas = data || [];
+    displayDramas();
+  }
+
+  const { data: sources, error: sourceError } = await db
+    .from("source_sites")
+    .select("name, website_url, source_type")
+    .order("name");
+
+  if (sourceError) {
+    $("sourceList").textContent = "Could not load sources: " + sourceError.message;
+  } else {
+    $("sourceList").innerHTML = (sources || []).map(s => `
+      <div class="item">
+        <strong>${escapeHTML(s.name)}</strong>
+        <div class="muted">${escapeHTML(s.source_type || "")}</div>
+        ${s.website_url
+          ? `<a href="${escapeHTML(s.website_url)}" target="_blank" rel="noopener noreferrer" style="color:#c4b5fd">Visit site ↗</a>`
+          : '<span class="muted">Website address not added yet</span>'}
+      </div>
+    `).join("");
+  }
+}
+
+async function addDrama() {
+  const title = $("title").value.trim();
+  if (!title) {
+    alert("Please enter a drama title.");
+    return;
+  }
+
+  const { error } = await db.from("dramas").insert({
+    primary_title: title,
+    original_platform: $("platform").value.trim() || null,
+    synopsis: $("synopsis").value.trim() || null
+  });
+
+  if (error) {
+    alert("Could not add drama: " + error.message);
+  } else {
+    $("title").value = "";
+    $("platform").value = "";
+    $("synopsis").value = "";
+    await loadLibrary();
+    alert("Drama added!");
+  }
+}
+
+$("loginButton").addEventListener("click", signIn);
+$("logoutButton").addEventListener("click", signOut);
+$("addButton").addEventListener("click", addDrama);
+$("search").addEventListener("input", displayDramas);
+
+db.auth.onAuthStateChange((event, session) => {
+  if (session) {
+    loadLibrary();
+  } else {
+    $("library").classList.add("hidden");
+    $("login").classList.remove("hidden");
+  }
+});
+
+db.auth.getSession().then(({ data }) => {
+  if (data.session) loadLibrary();
+});
+</script>
+</body>
+</html>
