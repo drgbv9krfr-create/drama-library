@@ -13,36 +13,6 @@ PASSWORD = os.environ["SUPABASE_PASSWORD"]
 
 USER_AGENT = "DramaLibraryBot/1.0"
 
-KNOWN_PLATFORMS = [
-    "Vigloo",
-    "GoodShort",
-    "FlickReels",
-    "StoreEl",
-    "ToonShort",
-    "KalosTV",
-    "ReelShort",
-    "DramaBox",
-    "ShortMax",
-    "NetShort",
-    "DramaWave",
-    "FlexTV",
-    "ReadShort",
-    "SnackShort",
-    "StoryReel",
-    "MoboReels",
-    "JoyReels",
-    "Sereal+",
-    "PineDrama",
-    "FreeReels",
-    "Melolo",
-    "RapidTV",
-    "FlareFlow",
-    "Playlet",
-    "DreameShort",
-    "ShortTV",
-    "RivoShort"
-]
-
 
 def request_json(url, method="GET", data=None, token=None):
     headers = {
@@ -54,10 +24,7 @@ def request_json(url, method="GET", data=None, token=None):
     body = json.dumps(data).encode() if data is not None else None
 
     req = urllib.request.Request(
-        url,
-        data=body,
-        headers=headers,
-        method=method
+        url, data=body, headers=headers, method=method
     )
 
     with urllib.request.urlopen(req, timeout=30) as response:
@@ -66,15 +33,11 @@ def request_json(url, method="GET", data=None, token=None):
 
 def get_page(url):
     req = urllib.request.Request(
-        url,
-        headers={"User-Agent": USER_AGENT}
+        url, headers={"User-Agent": USER_AGENT}
     )
 
     with urllib.request.urlopen(req, timeout=30) as response:
-        return response.read().decode(
-            "utf-8",
-            errors="replace"
-        )
+        return response.read().decode("utf-8", errors="replace")
 
 
 class PageParser(HTMLParser):
@@ -83,6 +46,7 @@ class PageParser(HTMLParser):
         super().__init__()
         self.links = []
         self.text = []
+        self.events = []
         self.current_link = None
         self.link_text = []
         self.in_h1 = False
@@ -104,6 +68,7 @@ class PageParser(HTMLParser):
 
         if clean:
             self.text.append(clean)
+            self.events.append(("text", clean))
 
         if self.current_link is not None:
             self.link_text.append(data)
@@ -113,11 +78,11 @@ class PageParser(HTMLParser):
 
     def handle_endtag(self, tag):
         if tag == "a" and self.current_link is not None:
-            label = " ".join(
-                " ".join(self.link_text).split()
-            )
+            label = " ".join(" ".join(self.link_text).split())
 
             self.links.append((self.current_link, label))
+            self.events.append(("link", self.current_link, label))
+
             self.current_link = None
             self.link_text = []
 
@@ -141,6 +106,39 @@ def extract_drama_links(html, base_url):
     return found
 
 
+def extract_original_platform(parser):
+    # Look for the exact Source label, then capture
+    # the next link belonging to that field.
+
+    for index, event in enumerate(parser.events):
+
+        if event[0] != "text":
+            continue
+
+        if not re.fullmatch(r"source\s*:?", event[1], re.I):
+            continue
+
+        for next_event in parser.events[index + 1:]:
+
+            if next_event[0] == "link":
+                label = next_event[2].strip()
+
+                if label:
+                    return label
+
+                return urlparse(next_event[1]).hostname or "Not detected"
+
+            if next_event[0] == "text":
+                if re.search(
+                    r"^(episodes?|genre|tags?)\s*:?",
+                    next_event[1],
+                    re.I
+                ):
+                    break
+
+    return "Not detected"
+
+
 def inspect_drama(url):
     html = get_page(url)
 
@@ -159,7 +157,8 @@ def inspect_drama(url):
     description = ""
 
     match = re.search(
-        r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)',
+        r'<meta[^>]+name=["\']description["\']'
+        r'[^>]+content=["\']([^"\']+)',
         html,
         re.I
     )
@@ -181,18 +180,7 @@ def inspect_drama(url):
     else:
         episodes = "Not detected"
 
-    original_platform = "Not detected"
-
-    for platform in KNOWN_PLATFORMS:
-        pattern = (
-            r"(?<![A-Za-z])"
-            + re.escape(platform)
-            + r"(?![A-Za-z])"
-        )
-
-        if re.search(pattern, page_text, re.I):
-            original_platform = platform
-            break
+    original_platform = extract_original_platform(parser)
 
     return {
         "title": title,
@@ -227,21 +215,17 @@ def main():
     )
 
     if not sources or not sources[0].get("website_url"):
-        print("DramaExpress URL not found in source directory.")
+        print("DramaExpress URL not found.")
         return
 
-    source_name = sources[0]["name"]
     home_url = sources[0]["website_url"]
 
-    print(f"Checking {source_name}: {home_url}")
+    print(f"Checking DramaExpress: {home_url}")
 
     html = get_page(home_url)
-
     dramas = extract_drama_links(html, home_url)
 
-    print(
-        f"Found {len(dramas)} drama links on the homepage."
-    )
+    print(f"Found {len(dramas)} drama links on the homepage.")
 
     for index, url in enumerate(
         list(dramas.keys())[:10],
@@ -262,16 +246,10 @@ def main():
             )
 
         except Exception as error:
-            print(
-                f"\nCould not inspect {url}: {error}"
-            )
+            print(f"\nCould not inspect {url}: {error}")
 
-    print(
-        "\nDiscovery test finished. "
-        "No database records were changed."
-    )
+    print("\nDiscovery test finished. No database records were changed.")
 
 
 if __name__ == "__main__":
     main()
-
